@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_canvas_starter/painter.dart';
 
@@ -17,16 +19,46 @@ class Entry extends StatefulWidget {
   State<Entry> createState() => _EntryState();
 }
 
-class _EntryState extends State<Entry> {
+class _EntryState extends State<Entry> with SingleTickerProviderStateMixin {
   int seconds = 0;
   bool pause = true;
+  bool done = false;
   late Timer timer;
   late AnimationController shakeController;
-  late Animation<Offset> shakeAnimation;
+  late Animation<double> shakeAnimation;
 
   @override
   void initState() {
     super.initState();
+    shakeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 100), // Total for 4 rotation steps
+    );
+    shakeAnimation = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0, end: 1 * pi / 180),
+        weight: 25, // 100ms
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1 * pi / 180, end: 0),
+        weight: 25, // 100ms
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0, end: -1 * pi / 180),
+        weight: 25, // 100ms
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: -1 * pi / 180, end: 0),
+        weight: 25, // 100ms
+      ),
+    ]).animate(CurvedAnimation(
+      parent: shakeController,
+      curve: Curves.linear,
+    ));
+  }
+
+  void _triggerShake() {
+    shakeController.repeat();
   }
 
   @override
@@ -44,6 +76,7 @@ class _EntryState extends State<Entry> {
   void startTimer() {
     setState(() {
       pause = false;
+      done = false;
     });
     timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (seconds > 0) {
@@ -54,6 +87,8 @@ class _EntryState extends State<Entry> {
         setState(() {
           timer.cancel();
           pause = true;
+          done = true;
+          _triggerShake();
         });
       }
     });
@@ -74,11 +109,15 @@ class _EntryState extends State<Entry> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Center(
-            child: SizedBox(
-              width: 300,
-              height: 300,
-              child: CustomPaint(
-                  painter: CanvasPainter(seconds: seconds), child: Container()),
+            child: RotationTransition(
+              turns: shakeAnimation,
+              child: SizedBox(
+                width: 300,
+                height: 300,
+                child: CustomPaint(
+                    painter: CanvasPainter(seconds: seconds),
+                    child: Container()),
+              ),
             ),
           ),
           GestureDetector(
@@ -86,8 +125,8 @@ class _EntryState extends State<Entry> {
               showModalBottomSheet(
                   context: context,
                   builder: (context) {
-                    int mm = 0;
-                    int ss = 0;
+                    TextEditingController mm = TextEditingController(),
+                        ss = TextEditingController();
                     return Container(
                       width: double.infinity,
                       height: double.infinity,
@@ -114,12 +153,10 @@ class _EntryState extends State<Entry> {
                               children: [
                                 Expanded(
                                   child: TextField(
+                                    controller: mm,
                                     decoration: const InputDecoration(
                                         hintText: "Minutes"),
                                     keyboardType: TextInputType.number,
-                                    onChanged: (text) {
-                                      mm = int.tryParse(text) ?? 0;
-                                    },
                                   ),
                                 ),
                                 const SizedBox(width: 20),
@@ -128,9 +165,7 @@ class _EntryState extends State<Entry> {
                                     decoration: const InputDecoration(
                                         hintText: "Seconds"),
                                     keyboardType: TextInputType.number,
-                                    onChanged: (text) {
-                                      ss = int.tryParse(text) ?? 0;
-                                    },
+                                    controller: ss,
                                   ),
                                 ),
                               ],
@@ -140,7 +175,8 @@ class _EntryState extends State<Entry> {
                           ElevatedButton(
                               onPressed: () {
                                 setState(() {
-                                  seconds = mm * 60 + ss;
+                                  seconds = (int.tryParse(mm.text) ?? 0) * 60 +
+                                      (int.tryParse(ss.text) ?? 0);
                                 });
                                 Navigator.pop(context);
                               },
@@ -158,12 +194,23 @@ class _EntryState extends State<Entry> {
           FloatingActionButton(
             onPressed: () {
               if (pause) {
-                startTimer();
+                if (done) {
+                  setState(() {
+                    done = false;
+                  });
+                  shakeController.reset();
+                } else {
+                  startTimer();
+                }
               } else {
                 pauseTimer();
               }
             },
-            child: Icon(pause ? Icons.play_arrow : Icons.pause),
+            child: Icon(pause
+                ? done
+                    ? Icons.stop
+                    : Icons.play_arrow
+                : Icons.pause),
           )
         ],
       ),
